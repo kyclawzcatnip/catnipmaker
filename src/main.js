@@ -130,12 +130,16 @@ function buildPalette(category) {
     if (!container) return;
     container.innerHTML = '';
 
-    const items = PALETTE_CATEGORIES[category] || [];
+    const items = PALETTE_CATEGORIES[category];
+    if (!items || items.length === 0) {
+        container.innerHTML = '<div style="color:#888;padding:12px;text-align:center;grid-column:1/-1;">No items</div>';
+        return;
+    }
 
     items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'palette-item';
-        div.title = item.name;
+        div.title = item.name + (item.key ? ' [' + item.key + ']' : '');
 
         // Check if currently selected
         if (item.type === 'tile' && editor.selectedTile === item.id && editor.currentTool === 'draw') {
@@ -148,19 +152,17 @@ function buildPalette(category) {
         const miniCanvas = document.createElement('canvas');
         miniCanvas.width = 48;
         miniCanvas.height = 48;
-        drawPalettePreview(item, miniCanvas);
+        try {
+            drawPalettePreview(item, miniCanvas);
+        } catch (err) {
+            console.error('Palette preview error for', item.name, err);
+        }
         div.appendChild(miniCanvas);
-
-        // Name label
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'palette-item-label';
-        nameSpan.textContent = item.name;
-        div.appendChild(nameSpan);
 
         // Key hint
         if (item.key) {
             const keySpan = document.createElement('span');
-            keySpan.className = 'palette-key-hint';
+            keySpan.className = 'key-hint';
             keySpan.textContent = item.key;
             div.appendChild(keySpan);
         }
@@ -176,6 +178,9 @@ function buildPalette(category) {
             }
             updateToolButtons();
             updatePaletteSelection();
+            // Update info bar
+            const nameEl = document.getElementById('palette-item-name');
+            if (nameEl) nameEl.textContent = item.name;
         });
 
         container.appendChild(div);
@@ -191,7 +196,7 @@ function updatePaletteSelection() {
     if (!container) return;
     const children = container.children;
     const activeTab = document.querySelector('.palette-tab.active');
-    const category = activeTab ? activeTab.dataset.category : 'terrain';
+    const category = activeTab ? activeTab.dataset.tab : 'terrain';
     const categoryItems = PALETTE_CATEGORIES[category] || [];
 
     for (let i = 0; i < categoryItems.length; i++) {
@@ -210,7 +215,7 @@ document.querySelectorAll('.palette-tab').forEach(tab => {
     tab.addEventListener('click', () => {
         document.querySelectorAll('.palette-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
-        buildPalette(tab.dataset.category);
+        buildPalette(tab.dataset.tab);
     });
 });
 
@@ -219,6 +224,18 @@ document.querySelectorAll('.palette-tab').forEach(tab => {
 function editorLoop() {
     if (mode !== 'editor') return;
     frameCount++;
+
+    // Arrow key panning in editor mode
+    if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+        const panSpeed = 12 / editor.zoom;
+        if (keysDown.has('ArrowLeft')) {
+            editor.camX = Math.max(0, editor.camX - panSpeed);
+        }
+        if (keysDown.has('ArrowRight')) {
+            const maxCamX = Math.max(0, editor.levelWidth * TILE_SIZE - editorCanvas.width / editor.zoom);
+            editor.camX = Math.min(maxCamX, editor.camX + panSpeed);
+        }
+    }
 
     const W = editorCanvas.width;
     const H = editorCanvas.height;
@@ -415,6 +432,7 @@ const keysDown = new Set();
 window.addEventListener('keydown', (e) => {
     if (mode !== 'editor') return;
     keysDown.add(e.key);
+    if (e.key.startsWith('Arrow')) e.preventDefault();
 
     // Ctrl / Cmd shortcuts
     if (e.ctrlKey || e.metaKey) {
@@ -522,6 +540,10 @@ document.getElementById('theme-select').addEventListener('change', (e) => {
 
 // File operations
 document.getElementById('btn-new').addEventListener('click', showNewLevelModal);
+document.getElementById('btn-clear').addEventListener('click', () => {
+    editor.newLevel();
+    showToast('Canvas reset to default!');
+});
 
 document.getElementById('btn-save').addEventListener('click', () => {
     editor.saveToLocalStorage();
@@ -547,9 +569,10 @@ document.getElementById('btn-import').addEventListener('click', async () => {
     }
 });
 
-// Play / Stop
+// Play / Stop / Reset
 document.getElementById('btn-play').addEventListener('click', switchToPlay);
 document.getElementById('btn-stop').addEventListener('click', switchToEditor);
+document.getElementById('btn-reset').addEventListener('click', () => playMode.resetLevel());
 
 // ─── Mode Switching ──────────────────────────────────────────────────────────
 
@@ -669,6 +692,9 @@ if (editor.loadFromLocalStorage()) {
     if (themeSelect) themeSelect.value = editor.theme;
     showToast('Autosave loaded!');
 }
+
+// Ensure draw tool is active
+setTool('draw');
 
 // Build initial palette
 buildPalette('terrain');

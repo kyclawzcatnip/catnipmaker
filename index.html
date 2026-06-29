@@ -16,14 +16,15 @@
                 <span id="app-title">ANTICATITE MAKER</span>
                 <div id="toolbar-divider"></div>
                 <button id="btn-new" class="tool-btn" title="New Level (Ctrl+N)">📄 NEW</button>
+                <button id="btn-clear" class="tool-btn" title="Reset Canvas to Default">🧹 CLEAR</button>
                 <button id="btn-save" class="tool-btn" title="Save Level (Ctrl+S)">💾 SAVE</button>
                 <button id="btn-load" class="tool-btn" title="Load Level (Ctrl+O)">📂 LOAD</button>
                 <button id="btn-export" class="tool-btn" title="Export as File">📤 EXPORT</button>
                 <button id="btn-import" class="tool-btn" title="Import from File">📥 IMPORT</button>
             </div>
             <div id="toolbar-center">
-                <button id="btn-select" class="edit-btn active" title="Select Tool (S)" data-tool="select">🔲</button>
-                <button id="btn-draw" class="edit-btn" title="Draw Tool (D)" data-tool="draw">✏️</button>
+                <button id="btn-select" class="edit-btn" title="Select Tool (S)" data-tool="select">🔲</button>
+                <button id="btn-draw" class="edit-btn active" title="Draw Tool (D)" data-tool="draw">✏️</button>
                 <button id="btn-erase" class="edit-btn" title="Erase Tool (E)" data-tool="erase">🧹</button>
                 <button id="btn-entity" class="edit-btn" title="Entity Tool (N)" data-tool="entity">👾</button>
                 <button id="btn-fill" class="edit-btn" title="Fill Tool (F)" data-tool="fill">🪣</button>
@@ -58,7 +59,7 @@
                     <button class="palette-tab active" data-tab="terrain">🏔️</button>
                     <button class="palette-tab" data-tab="blocks">🧱</button>
                     <button class="palette-tab" data-tab="pipes">🟢</button>
-                    <button class="palette-tab" data-tab="special">⭐</button>
+
                     <button class="palette-tab" data-tab="entities">👾</button>
                 </div>
                 <div id="palette-items">
@@ -78,6 +79,7 @@
                 <div id="play-hud" class="hidden">
                     <span id="hud-coins">🪙 × 0</span>
                     <span id="hud-timer">⏱ 0:00</span>
+                    <button id="btn-reset" class="tool-btn" title="Reset Level (R)">🔄 RESET</button>
                     <button id="btn-stop" class="stop-btn" title="Back to Editor (Escape)">⬅ EDITOR</button>
                 </div>
 

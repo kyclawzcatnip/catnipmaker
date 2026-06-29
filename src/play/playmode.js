@@ -3,7 +3,7 @@
 import { TILE_SIZE, CANVAS_W, CANVAS_H, GRAVITY, COIN_ANIM_SPEED } from '../core/constants.js';
 import { createPlayer, updatePlayer, createEnemy, updateEnemies, checkPlayerEnemyCollision, checkCoinCollision, updateArrows, createArrow } from '../physics/physics.js';
 import { drawTile, TILE_TYPES } from '../renderer/tiles.js';
-import { drawCat, drawRat, drawRatter, drawFlyRatter, drawArcher, drawCoin, drawOneUp, drawFireFlower, drawCheckpoint, CAT_SKINS } from '../renderer/sprites.js';
+import { drawCat, drawRat, drawRatter, drawFlyRatter, drawArcher, drawCoin, drawOneUp, drawFireFlower, drawCheckpoint, drawGoalMarker, CAT_SKINS } from '../renderer/sprites.js';
 import { drawBackground } from '../renderer/backgrounds.js';
 
 export class PlayMode {
@@ -40,11 +40,17 @@ export class PlayMode {
         this.camX = 0;
 
         // Input
-        this.keys = { left: false, right: false, jump: false, jumpPressed: false };
+        this.keys = { left: false, right: false, jump: false, jumpPressed: false, down: false, fire: false, firePressed: false, scratch: false, scratchPressed: false };
         this._jumpWasPressed = false;
+        this._fireWasPressed = false;
+        this._scratchWasPressed = false;
+        this.hasFire = false;
+        this.fireballs = [];
+        this.scratchTimer = 0;
 
         // Callbacks
         this.onExit = null;     // called when player exits back to editor
+        this._prevVY = 0;       // for question block head-bump detection
 
         // Bind methods
         this._onKeyDown = this._onKeyDown.bind(this);
@@ -56,6 +62,7 @@ export class PlayMode {
     }
 
     startLevel(levelData) {
+        this._initialLevelData = levelData;
         this.level = {
             grid: levelData.grid.map(row => [...row]), // deep copy
             width: levelData.width,
@@ -70,7 +77,9 @@ export class PlayMode {
         this.items = [];
         this.checkpoints = [];
         this.arrows = [];
+        this.fireballs = [];
         this.particles = [];
+        this.scratchTimer = 0;
 
         // Parse entities
         levelData.entities.forEach(e => {
@@ -147,6 +156,12 @@ export class PlayMode {
         this._animFrame();
     }
 
+    resetLevel() {
+        if (this._initialLevelData) {
+            this.startLevel(this._initialLevelData);
+        }
+    }
+
     stop() {
         this.running = false;
         window.removeEventListener('keydown', this._onKeyDown);
@@ -162,10 +177,18 @@ export class PlayMode {
         this.frameCount++;
         this.timer++;
 
-        // Handle jumpPressed (edge detection)
+        // Handle key edge detection
         const jumpNow = this.keys.jump;
         this.keys.jumpPressed = jumpNow && !this._jumpWasPressed;
         this._jumpWasPressed = jumpNow;
+
+        const fireNow = this.keys.fire;
+        this.keys.firePressed = fireNow && !this._fireWasPressed;
+        this._fireWasPressed = fireNow;
+
+        const scratchNow = this.keys.scratch;
+        this.keys.scratchPressed = scratchNow && !this._scratchWasPressed;
+        this._scratchWasPressed = scratchNow;
 
         this._update();
         this._draw();
@@ -193,6 +216,45 @@ export class PlayMode {
         // Update player physics
         updatePlayer(this.player, this.keys, this.level.grid, this.level.width, this.level.height);
 
+        // Question block hit detection (hitting from below)
+        if (this.player.vy >= 0 && this._prevVY < 0) {
+            // Player was moving up, now stopped or moving down = hit head
+            const headRow = Math.floor((this.player.y - 1) / TILE_SIZE);
+            const leftCol = Math.floor((this.player.x + 4) / TILE_SIZE);
+            const rightCol = Math.floor((this.player.x + this.player.w - 4) / TILE_SIZE);
+            for (let col = leftCol; col <= rightCol; col++) {
+                if (headRow >= 0 && headRow < this.level.height && col >= 0 && col < this.level.width) {
+                    const tileType = this.level.grid[headRow][col];
+                    if (tileType === 3) {
+                        // Normal question block → used block + spawn coin
+                        this.level.grid[headRow][col] = 8;
+                        this.coinCount++;
+                        this._addParticles(col * TILE_SIZE + 16, headRow * TILE_SIZE, '#FFD700', 5);
+                    } else if (tileType === 13) {
+                        // Rare question block → used block + extra reward
+                        this.level.grid[headRow][col] = 8;
+                        this.coinCount += 5;
+                        this._addParticles(col * TILE_SIZE + 16, headRow * TILE_SIZE, '#FF44FF', 8);
+                    } else if (tileType === 2) {
+                        // Brick block → break it
+                        this.level.grid[headRow][col] = 0;
+                        this._addParticles(col * TILE_SIZE + 16, headRow * TILE_SIZE + 16, '#C84B31', 6);
+                    }
+                }
+            }
+        }
+        this._prevVY = this.player.vy;
+
+        // Castle door interaction (touch to win)
+        const pCenterCol = Math.floor((this.player.x + this.player.w / 2) / TILE_SIZE);
+        const pCenterRow = Math.floor((this.player.y + this.player.h / 2) / TILE_SIZE);
+        if (pCenterCol >= 0 && pCenterCol < this.level.width && pCenterRow >= 0 && pCenterRow < this.level.height) {
+            if (this.level.grid[pCenterRow][pCenterCol] === 12) {
+                this.won = true;
+                this.winTimer = 0;
+            }
+        }
+
         // Camera follow
         const targetCam = this.player.x - CANVAS_W / 2;
         this.camX += (targetCam - this.camX) * 0.1; // smooth follow
@@ -201,25 +263,118 @@ export class PlayMode {
         // Update enemies
         updateEnemies(this.enemies, this.level.grid, this.level.width, this.level.height, this.player);
 
-        // Archer arrow spawning
+        // Archer arrow spawning (aim at player)
         this.enemies.forEach(e => {
-            if (e.type === 'archer' && e.alive && e.shootTimer <= 0) {
-                this.arrows.push(createArrow(e.x + 16, e.y + 14, e.dir));
-                e.shootTimer = e.shootCooldown;
+            if (e.type === 'archer' && e.active && !e.dead && e.shootTimer <= 0) {
+                this.arrows.push(createArrow(e.x + 16, e.y + 14, this.player.x + 12, this.player.y + 16));
+                e.shootTimer = e.shootInterval || 120;
             }
         });
 
         // Update arrows
         updateArrows(this.arrows, this.level.grid, this.level.width, this.level.height);
 
+        // Fireball Spawning (Key E)
+        if (this.keys.firePressed && this.hasFire) {
+            this.fireballs.push({
+                x: this.player.dir === 1 ? this.player.x + this.player.w : this.player.x - 12,
+                y: this.player.y + 10,
+                vx: this.player.dir * 7,
+                vy: 2,
+                w: 12,
+                h: 12,
+                active: true
+            });
+        }
+
+        // Update Fireballs
+        this.fireballs.forEach(f => {
+            if (!f.active) return;
+            f.x += f.vx;
+            f.vy += 0.3;
+            f.y += f.vy;
+
+            const col = Math.floor((f.x + 6) / TILE_SIZE);
+            const row = Math.floor((f.y + 6) / TILE_SIZE);
+            if (col >= 0 && col < this.level.width && row >= 0 && row < this.level.height) {
+                const tile = this.level.grid[row][col];
+                if (tile > 0 && tile !== 9 && tile !== 10 && tile !== 12) {
+                    if (f.vy > 0 && Math.floor(f.y / TILE_SIZE) <= row) {
+                        f.vy = -4.5;
+                    } else {
+                        f.active = false;
+                        this._addParticles(f.x + 6, f.y + 6, '#FF4400', 5);
+                    }
+                }
+            }
+
+            this.enemies.forEach(e => {
+                if (!e.active || e.dead || !f.active) return;
+                if (f.x < e.x + e.w && f.x + f.w > e.x &&
+                    f.y < e.y + e.h && f.y + f.h > e.y) {
+                    f.active = false;
+                    e.dead = true;
+                    e.active = false;
+                    this._addParticles(e.x + e.w / 2, e.y + e.h / 2, '#FF4400', 8);
+                }
+            });
+
+            if (f.x < -40 || f.x > this.level.width * TILE_SIZE + 40 || f.y > this.level.height * TILE_SIZE + 40) {
+                f.active = false;
+            }
+        });
+
+        // Cat Scratch Attack (Key F)
+        if (this.keys.scratchPressed && this.scratchTimer <= 0) {
+            this.scratchTimer = 14;
+        }
+        if (this.scratchTimer > 0) {
+            this.scratchTimer--;
+            const sw = 28, sh = this.player.h;
+            const sx = this.player.dir === 1 ? this.player.x + this.player.w : this.player.x - sw;
+            const sy = this.player.y;
+
+            this.enemies.forEach(e => {
+                if (!e.active || e.dead) return;
+                if (sx < e.x + e.w && sx + sw > e.x &&
+                    sy < e.y + e.h && sy + sh > e.y) {
+                    if (e.type === 'ratter' && !e.shell) {
+                        e.shell = true;
+                        e.shellVx = this.player.dir * 8;
+                    } else if (e.type === 'ratter' && e.shell) {
+                        e.shellVx = this.player.dir * 8;
+                    } else {
+                        e.dead = true;
+                        e.active = false;
+                    }
+                    this._addParticles(e.x + e.w / 2, e.y + e.h / 2, '#00FFFF', 6);
+                }
+            });
+        }
+
+        // Ratter shell sliding knockouts against other enemies
+        this.enemies.forEach(e1 => {
+            if (e1.type === 'ratter' && e1.shell && e1.shellVx !== 0 && e1.active && !e1.dead) {
+                this.enemies.forEach(e2 => {
+                    if (e1 !== e2 && e2.active && !e2.dead) {
+                        if (e1.x < e2.x + e2.w && e1.x + e1.w > e2.x &&
+                            e1.y < e2.y + e2.h && e1.y + e1.h > e2.y) {
+                            e2.dead = true;
+                            e2.active = false;
+                            this._addParticles(e2.x + e2.w / 2, e2.y + e2.h / 2, '#FFD700', 6);
+                        }
+                    }
+                });
+            }
+        });
+
         // Player-enemy collisions
         this.enemies.forEach(e => {
-            if (!e.alive) return;
+            if (!e.active || e.dead) return;
             const result = checkPlayerEnemyCollision(this.player, e);
             if (result === 'stomp') {
                 if (e.type === 'ratter' || e.type === 'flyratter') {
                     if (e.type === 'flyratter') {
-                        // Lose wings, become regular ratter on ground
                         e.type = 'ratter';
                         e.shell = false;
                     } else if (!e.shell) {
@@ -227,17 +382,16 @@ export class PlayMode {
                         e.shellVx = 0;
                         e.vx = 0;
                     } else {
-                        // Kick shell
                         e.shellVx = this.player.x < e.x ? 6 : -6;
                     }
                 } else {
-                    e.alive = false;
+                    e.dead = true;
+                    e.active = false;
                 }
-                this.player.vy = -8; // bounce
+                this.player.vy = -8;
                 this._addParticles(e.x + e.w / 2, e.y, '#FFD700', 5);
             } else if (result === 'hit' && this.invincibleTimer <= 0) {
                 if (e.type === 'ratter' && e.shell && e.shellVx === 0) {
-                    // Kick stationary shell
                     e.shellVx = this.player.dir * 6;
                 } else {
                     this._playerHit();
@@ -247,11 +401,11 @@ export class PlayMode {
 
         // Arrow-player collision
         this.arrows.forEach(a => {
-            if (!a.alive) return;
+            if (!a.active) return;
             if (this.invincibleTimer <= 0 &&
                 a.x < this.player.x + this.player.w && a.x + 8 > this.player.x &&
                 a.y < this.player.y + this.player.h && a.y + 4 > this.player.y) {
-                a.alive = false;
+                a.active = false;
                 this._playerHit();
             }
         });
@@ -276,8 +430,16 @@ export class PlayMode {
             if (this.player.x < item.x + item.w && this.player.x + this.player.w > item.x &&
                 this.player.y < item.y + item.h && this.player.y + this.player.h > item.y) {
                 item.collected = true;
-                if (item.type === 'oneup') this.lives++;
-                this._addParticles(item.x + 12, item.y + 12, '#00FF88', 4);
+                if (item.type === 'oneup') {
+                    this.lives++;
+                    this._addParticles(item.x + 12, item.y + 12, '#00FF88', 4);
+                } else if (item.type === 'fireflower') {
+                    this.hasFire = true;
+                    this.invincibleTimer = 180; // 3 seconds of invincibility
+                    this._addParticles(item.x + 12, item.y + 12, '#FF4400', 8);
+                } else {
+                    this._addParticles(item.x + 12, item.y + 12, '#00FF88', 4);
+                }
             }
         });
 
@@ -309,6 +471,19 @@ export class PlayMode {
             if (dx < TILE_SIZE && dy < TILE_SIZE) {
                 this.won = true;
                 this.winTimer = 0;
+            }
+        }
+
+        // Silver pipe exit — press S or Down on silver pipe top (type 16 or 17)
+        if (this.keys.down && this.player.grounded) {
+            const feetRow = Math.floor((this.player.y + this.player.h + 1) / TILE_SIZE);
+            const feetCol = Math.floor((this.player.x + this.player.w / 2) / TILE_SIZE);
+            if (feetRow >= 0 && feetRow < this.level.height && feetCol >= 0 && feetCol < this.level.width) {
+                const belowTile = this.level.grid[feetRow][feetCol];
+                if (belowTile === 16 || belowTile === 17) {
+                    this.won = true;
+                    this.winTimer = 0;
+                }
             }
         }
 
@@ -364,6 +539,14 @@ export class PlayMode {
             drawCoin(ctx, sx, c.y, this.frameCount);
         });
 
+        // Goal marker
+        if (this.goalX !== undefined) {
+            const gsx = this.goalX - this.camX;
+            if (gsx > -TILE_SIZE * 2 && gsx < W + TILE_SIZE * 2) {
+                drawGoalMarker(ctx, gsx, this.goalY, this.frameCount);
+            }
+        }
+
         // Items
         this.items.forEach(item => {
             if (item.collected) return;
@@ -382,24 +565,23 @@ export class PlayMode {
 
         // Enemies
         this.enemies.forEach(e => {
-            if (!e.alive) return;
+            if (!e.active || e.dead) return;
             const sx = e.x - this.camX;
             if (sx < -TILE_SIZE * 2 || sx > W + TILE_SIZE * 2) return;
             const dir = e.vx >= 0 ? 1 : (e.vx < 0 ? -1 : (e.dir || 1));
             switch (e.type) {
-                case 'rat': drawRat(ctx, sx, e.y, dir, e.frame, this.level.theme); break;
-                case 'ratter': drawRatter(ctx, sx, e.y, dir, e.frame, e.shell); break;
-                case 'flyratter': drawFlyRatter(ctx, sx, e.y, dir, e.frame); break;
-                case 'archer': drawArcher(ctx, sx, e.y, e.dir || 1, e.frame, this.level.theme); break;
+                case 'rat': drawRat(ctx, sx, e.y, dir, this.frameCount, this.level.theme); break;
+                case 'ratter': drawRatter(ctx, sx, e.y, dir, this.frameCount, e.shell); break;
+                case 'flyratter': drawFlyRatter(ctx, sx, e.y, dir, this.frameCount); break;
+                case 'archer': drawArcher(ctx, sx, e.y, e.dir || 1, this.frameCount, this.level.theme); break;
             }
         });
 
         // Arrows
         this.arrows.forEach(a => {
-            if (!a.alive) return;
+            if (!a.active) return;
             const sx = a.x - this.camX;
             if (sx < -20 || sx > W + 20) return;
-            // Simple arrow rendering
             ctx.fillStyle = '#8B6914';
             ctx.fillRect(sx, a.y, 12, 2);
             ctx.fillStyle = '#555';
@@ -412,10 +594,38 @@ export class PlayMode {
             ctx.fill();
         });
 
+        // Fireballs
+        this.fireballs.forEach(f => {
+            if (!f.active) return;
+            const sx = f.x - this.camX;
+            if (sx < -20 || sx > W + 20) return;
+            ctx.fillStyle = '#FF4400';
+            ctx.beginPath();
+            ctx.arc(sx + 6, f.y + 6, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FFFF00';
+            ctx.beginPath();
+            ctx.arc(sx + 6, f.y + 6, 3, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
         // Player
         if (!this.dead || this.deathTimer < 30) {
             if (this.invincibleTimer <= 0 || this.frameCount % 4 >= 2) {
                 drawCat(ctx, this.player.x - this.camX, this.player.y, 0, this.player.dir, this.player.grounded, this.player.walking, this.frameCount);
+            }
+        }
+
+        // Scratch Attack Arc Visual
+        if (this.scratchTimer > 0) {
+            const cx = (this.player.dir === 1 ? this.player.x + this.player.w + 10 : this.player.x - 10) - this.camX;
+            const cy = this.player.y + 16;
+            ctx.strokeStyle = '#00FFFF';
+            ctx.lineWidth = 3;
+            for (let i = -1; i <= 1; i++) {
+                ctx.beginPath();
+                ctx.arc(cx, cy + i * 8, 14, (this.player.dir === 1 ? -0.4 : 0.6) * Math.PI, (this.player.dir === 1 ? 0.4 : 1.4) * Math.PI);
+                ctx.stroke();
             }
         }
 
@@ -549,6 +759,23 @@ export class PlayMode {
                 this.keys.jump = true;
                 e.preventDefault();
                 break;
+            case 'ArrowDown':
+            case 'KeyS':
+                this.keys.down = true;
+                e.preventDefault();
+                break;
+            case 'KeyE':
+                this.keys.fire = true;
+                e.preventDefault();
+                break;
+            case 'KeyF':
+                this.keys.scratch = true;
+                e.preventDefault();
+                break;
+            case 'KeyR':
+                this.resetLevel();
+                e.preventDefault();
+                break;
             case 'Escape':
                 this.stop();
                 e.preventDefault();
@@ -572,6 +799,19 @@ export class PlayMode {
             case 'ArrowUp':
             case 'KeyW':
                 this.keys.jump = false;
+                e.preventDefault();
+                break;
+            case 'ArrowDown':
+            case 'KeyS':
+                this.keys.down = false;
+                e.preventDefault();
+                break;
+            case 'KeyE':
+                this.keys.fire = false;
+                e.preventDefault();
+                break;
+            case 'KeyF':
+                this.keys.scratch = false;
                 e.preventDefault();
                 break;
         }

@@ -40,7 +40,9 @@ export function getTileAt(grid, px, py, lw, lh) {
  * @returns {boolean}
  */
 function isSolid(type) {
-    return type > 0 && type !== 9;
+    // Air (0), platform (9), flag (10), castle door (12) are NOT solid
+    if (type === 0 || type === 9 || type === 10 || type === 12) return false;
+    return type > 0;
 }
 
 // ── Player factory ───────────────────────────────────────────────────────────
@@ -64,7 +66,8 @@ export function createPlayer(x, y) {
         walking: false,
         dead: false,
         coyoteTimer: 0,
-        jumpBufferTimer: 0
+        jumpBufferTimer: 0,
+        canDoubleJump: true
     };
 }
 
@@ -82,9 +85,9 @@ export function updatePlayer(player, keys, grid, levelWidth, levelHeight) {
     if (player.dead) return;
 
     // ── 1. Horizontal input ──────────────────────────────────────────────
-    const left  = keys['ArrowLeft']  || keys['a'] || keys['A'];
-    const right = keys['ArrowRight'] || keys['d'] || keys['D'];
-    const jump  = keys['ArrowUp']    || keys['w'] || keys['W'] || keys[' '];
+    const left  = keys.left;
+    const right = keys.right;
+    const jump  = keys.jump;
 
     if (left) {
         player.vx = -WALK_SPEED;
@@ -102,6 +105,7 @@ export function updatePlayer(player, keys, grid, levelWidth, levelHeight) {
     // ── 2. Coyote time & jump buffer ─────────────────────────────────────
     if (player.grounded) {
         player.coyoteTimer = COYOTE_TIME;
+        player.canDoubleJump = true; // Reset double jump on landing
     } else {
         player.coyoteTimer = Math.max(0, player.coyoteTimer - 1);
     }
@@ -112,17 +116,23 @@ export function updatePlayer(player, keys, grid, levelWidth, levelHeight) {
         player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - 1);
     }
 
-    // Initiate jump
+    // Initiate first jump (ground/coyote)
     if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0) {
         player.vy = JUMP_FORCE;
         player.grounded = false;
         player.coyoteTimer = 0;
         player.jumpBufferTimer = 0;
     }
+    // Double jump (midair, on fresh press)
+    else if (keys.jumpPressed && !player.grounded && player.coyoteTimer <= 0 && player.canDoubleJump) {
+        player.vy = JUMP_FORCE * 0.85; // Slightly weaker than first jump
+        player.canDoubleJump = false;
+        player.jumpBufferTimer = 0;
+    }
 
     // Variable-height jump: cut upward velocity when jump key is released
-    if (!jump && player.vy < 0) {
-        player.vy *= 0.5;
+    if (!jump && player.vy < -3) {
+        player.vy = -3;
     }
 
     // ── 3. Gravity ───────────────────────────────────────────────────────
@@ -401,28 +411,34 @@ function updateRat(e, grid, lw, lh) {
  */
 function updateRatter(e, grid, lw, lh) {
     if (e.shell) {
-        // Shell mode: slide fast, bounce off walls
-        e.vy += GRAVITY;
-        if (e.vy > MAX_FALL) e.vy = MAX_FALL;
+        if (e.shellVx !== 0) {
+            e.vy += GRAVITY;
+            if (e.vy > MAX_FALL) e.vy = MAX_FALL;
 
-        e.x += e.shellVx;
-        const prevVx = e.shellVx;
-        resolveHorizontalCollisions(e, grid, lw, lh);
-        // If velocity was zeroed by collision, bounce
-        if (e.vx === 0 && prevVx !== 0) {
-            e.shellVx = -prevVx;
+            e.vx = e.shellVx;
+            e.x += e.vx;
+            const prevVx = e.vx;
+            resolveHorizontalCollisions(e, grid, lw, lh);
+            if (e.vx === 0 && prevVx !== 0) {
+                e.shellVx = -prevVx;
+            } else {
+                e.shellVx = e.vx;
+            }
+
+            if (e.x <= 0) { e.x = 0; e.shellVx = Math.abs(e.shellVx); }
+            if (e.x + e.w >= lw * TILE_SIZE) { e.x = lw * TILE_SIZE - e.w; e.shellVx = -Math.abs(e.shellVx); }
+
+            e.y += e.vy;
+            resolveVerticalCollisions(e, grid, lw, lh);
+        } else {
+            e.vy += GRAVITY;
+            if (e.vy > MAX_FALL) e.vy = MAX_FALL;
+            e.y += e.vy;
+            resolveVerticalCollisions(e, grid, lw, lh);
         }
-
-        // Wall bouncing at level edges
-        if (e.x <= 0) { e.x = 0; e.shellVx = Math.abs(e.shellVx); }
-        if (e.x + e.w >= lw * TILE_SIZE) { e.x = lw * TILE_SIZE - e.w; e.shellVx = -Math.abs(e.shellVx); }
-
-        e.y += e.vy;
-        resolveVerticalCollisions(e, grid, lw, lh);
         return;
     }
 
-    // Normal mode → behave like rat
     updateRat(e, grid, lw, lh);
 }
 
@@ -456,15 +472,12 @@ function updateFlyratter(e, grid, lw, lh) {
 function updateArcher(e, player) {
     if (!player || player.dead) return;
 
-    // Face the player
-    e.facingPlayer = player.x < e.x ? -1 : 1;
-    e.dir = e.facingPlayer;
+    const dx = (player.x + player.w / 2) - (e.x + e.w / 2);
+    e.dir = dx >= 0 ? 1 : -1;
 
-    // Decrement shoot timer
     if (e.shootTimer > 0) {
         e.shootTimer--;
     }
-    // When timer reaches 0 the game loop should spawn an arrow and reset shootTimer
 }
 
 // ── Player-enemy collision ───────────────────────────────────────────────────
@@ -507,7 +520,7 @@ export function checkPlayerEnemyCollision(player, enemy) {
  * @returns {boolean} True if overlapping.
  */
 export function checkCoinCollision(player, coin) {
-    if (player.dead || !coin.active) return false;
+    if (player.dead || coin.collected) return false;
 
     return (
         player.x < coin.x + coin.w &&
@@ -520,13 +533,23 @@ export function checkCoinCollision(player, coin) {
 // ── Arrow projectiles ────────────────────────────────────────────────────────
 
 /**
- * Creates an arrow projectile.
+ * Creates an arrow projectile aimed at a target position.
  * @param {number} x - Spawn x (pixels).
  * @param {number} y - Spawn y (pixels).
- * @param {number} dir - Direction (-1 = left, 1 = right).
+ * @param {number} targetX - Target x (pixels).
+ * @param {number} targetY - Target y (pixels).
  * @returns {object} Arrow state.
  */
-export function createArrow(x, y, dir) {
+export function createArrow(x, y, targetX, targetY) {
+    let vx = 5, vy = 0, dir = 1;
+    if (targetX !== undefined && targetY !== undefined) {
+        const dx = targetX - x;
+        const dy = targetY - y;
+        const dist = Math.hypot(dx, dy) || 1;
+        vx = (dx / dist) * 5.5;
+        vy = (dy / dist) * 5.5;
+        dir = dx >= 0 ? 1 : -1;
+    }
     return {
         x,
         y,
