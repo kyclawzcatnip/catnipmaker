@@ -259,63 +259,39 @@ function drawGround(ctx, x, y, theme, row, col) {
 
 function drawBrick(ctx, x, y, theme) {
   if (theme === 'castle') {
-    // Reinforced planks
-    ctx.fillStyle = '#5C3A1E';
-    ctx.fillRect(x, y, 32, 32);
-
-    ctx.fillStyle = '#6E4C2C';
-    ctx.fillRect(x + 1, y + 1, 30, 30);
-
-    // Horizontal wood grain lines
-    ctx.strokeStyle = '#4A2E16';
-    ctx.lineWidth = 1;
-
-    ctx.beginPath();
-    ctx.moveTo(x + 1, y + 8);
-    ctx.lineTo(x + 31, y + 8);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(x + 1, y + 18);
-    ctx.lineTo(x + 31, y + 18);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(x + 1, y + 28);
-    ctx.lineTo(x + 31, y + 28);
-    ctx.stroke();
-
-    // Iron bolt circles at corners
+    // Mineshaft / Castle style: dark reinforced wooden planks
+    ctx.fillStyle = '#5C3A1E'; ctx.fillRect(x, y, 32, 32);
+    ctx.fillStyle = '#6E4C2C'; ctx.fillRect(x + 1, y + 1, 30, 30);
+    // Wood grain (horizontal)
+    ctx.strokeStyle = '#4A2E16'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 2, y + 8); ctx.lineTo(x + 30, y + 8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 2, y + 18); ctx.lineTo(x + 30, y + 18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 2, y + 28); ctx.lineTo(x + 30, y + 28); ctx.stroke();
+    // Iron bolt corners
     ctx.fillStyle = '#777';
-    const boltPositions = [
-      [x + 5, y + 5],
-      [x + 27, y + 5],
-      [x + 5, y + 27],
-      [x + 27, y + 27],
-    ];
-    for (const [bx, by] of boltPositions) {
-      ctx.beginPath();
-      ctx.arc(bx, by, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.beginPath(); ctx.arc(x + 5, y + 5, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 27, y + 5, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 5, y + 27, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 27, y + 27, 2, 0, Math.PI * 2); ctx.fill();
+    // Bolt shine
+    ctx.fillStyle = '#999';
+    ctx.fillRect(x + 5, y + 4, 1, 1);
+    ctx.fillRect(x + 27, y + 4, 1, 1);
   } else {
-    // Overworld: red-brown brick with mortar
-    ctx.fillStyle = '#C84B31';
-    ctx.fillRect(x, y, 32, 32);
-
-    ctx.fillStyle = '#A03820';
-    ctx.fillRect(x + 2, y + 2, 28, 28);
-
-    // Mortar lines
-    ctx.strokeStyle = '#7A2E1A';
-    ctx.lineWidth = 1;
-
-    ctx.strokeRect(x + 1, y + 1, 30, 15);
-
-    ctx.beginPath();
-    ctx.moveTo(x + 16, y + 16);
-    ctx.lineTo(x + 16, y + 32);
-    ctx.stroke();
+    // Overworld: authentic wooden ship plank brick texture
+    ctx.fillStyle = '#6B4226'; ctx.fillRect(x, y, 32, 32);
+    ctx.fillStyle = '#8B5A2B'; ctx.fillRect(x + 1, y + 1, 30, 30);
+    // Wood grain lines
+    ctx.strokeStyle = '#5C3317'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 2, y + 6); ctx.lineTo(x + 30, y + 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 2, y + 16); ctx.lineTo(x + 30, y + 16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 2, y + 26); ctx.lineTo(x + 30, y + 26); ctx.stroke();
+    // Nail details
+    ctx.fillStyle = '#444';
+    ctx.fillRect(x + 3, y + 3, 2, 2);
+    ctx.fillRect(x + 27, y + 3, 2, 2);
+    ctx.fillRect(x + 3, y + 27, 2, 2);
+    ctx.fillRect(x + 27, y + 27, 2, 2);
   }
 }
 

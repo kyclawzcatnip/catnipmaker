@@ -110,6 +110,144 @@ export class Editor {
         this.modified = false;
     }
 
+    /**
+     * Generate a procedural random level for playing or modifying.
+     */
+    generateRandomLevel() {
+        const width = 60;
+        const height = 14;
+        const themes = ['overworld', 'castle'];
+        const theme = themes[Math.floor(Math.random() * themes.length)];
+
+        this.levelWidth = width;
+        this.levelHeight = height;
+        this.theme = theme;
+        this.levelName = 'Random Level';
+        this.author = 'Random Generator';
+
+        const groundTile = theme === 'castle' ? 11 : 1;
+
+        // Build empty grid
+        this.grid = [];
+        for (let r = 0; r < height; r++) {
+            this.grid[r] = new Array(width).fill(0);
+        }
+
+        // Generate ground with gaps and steps
+        let currentH = 2; // ground thickness
+        for (let c = 0; c < width; c++) {
+            // Leave start and end safe
+            if (c > 5 && c < width - 6 && Math.random() < 0.12) {
+                const gapLen = Math.floor(Math.random() * 2) + 2;
+                c += gapLen;
+                if (c >= width - 6) break;
+            }
+
+            if (c > 8 && c < width - 10 && Math.random() < 0.15) {
+                currentH = Math.max(2, Math.min(4, currentH + (Math.random() < 0.5 ? 1 : -1)));
+            }
+
+            for (let r = height - currentH; r < height; r++) {
+                this.grid[r][c] = groundTile;
+            }
+        }
+
+        // Generate floating platforms, blocks, pipes
+        this.entities = [
+            { type: 'spawn', x: 2 * TILE_SIZE, y: (height - 3) * TILE_SIZE, col: 2, row: height - 3 }
+        ];
+
+        for (let c = 6; c < width - 6; c += Math.floor(Math.random() * 3) + 2) {
+            const r = Math.floor(Math.random() * 4) + 6;
+            const randType = Math.random();
+
+            if (randType < 0.3) {
+                const len = Math.floor(Math.random() * 4) + 2;
+                for (let i = 0; i < len && c + i < width - 6; i++) {
+                    if (i === Math.floor(len / 2) && Math.random() < 0.6) {
+                        this.grid[r][c + i] = Math.random() < 0.2 ? 13 : 3;
+                    } else {
+                        this.grid[r][c + i] = 2;
+                    }
+                    if (Math.random() < 0.3) {
+                        this.entities.push({ type: 'coin', col: c + i, row: r - 1, x: (c + i) * TILE_SIZE + 8, y: (r - 1) * TILE_SIZE + 4 });
+                    }
+                }
+                c += len;
+            } else if (randType < 0.5) {
+                const pipeHeight = Math.floor(Math.random() * 2) + 2;
+                const isSilver = Math.random() < 0.25;
+                const tl = isSilver ? 16 : 4, tr = isSilver ? 17 : 5;
+                const bl = isSilver ? 18 : 6, br = isSilver ? 19 : 7;
+                const baseR = height - 3;
+                if (this.grid[baseR + 1] && this.grid[baseR + 1][c] !== 0) {
+                    this.grid[baseR - pipeHeight + 1][c] = tl;
+                    this.grid[baseR - pipeHeight + 1][c + 1] = tr;
+                    for (let ph = baseR - pipeHeight + 2; ph <= baseR; ph++) {
+                        this.grid[ph][c] = bl;
+                        this.grid[ph][c + 1] = br;
+                    }
+                }
+                c += 2;
+            } else if (randType < 0.7) {
+                const len = Math.floor(Math.random() * 3) + 3;
+                for (let i = 0; i < len && c + i < width - 6; i++) {
+                    this.grid[r][c + i] = 9;
+                }
+                c += len;
+            }
+        }
+
+        // Place enemies, items, checkpoints
+        for (let c = 10; c < width - 8; c += Math.floor(Math.random() * 6) + 4) {
+            let groundR = -1;
+            for (let r = 4; r < height; r++) {
+                if (this.grid[r][c] !== 0) { groundR = r; break; }
+            }
+            if (groundR > 2) {
+                const randE = Math.random();
+                if (randE < 0.3) {
+                    this.entities.push({ type: 'rat', col: c, row: groundR - 1, x: c * TILE_SIZE, y: (groundR - 1) * TILE_SIZE });
+                } else if (randE < 0.5) {
+                    this.entities.push({ type: 'ratter', col: c, row: groundR - 1, x: c * TILE_SIZE, y: (groundR - 1) * TILE_SIZE });
+                } else if (randE < 0.65) {
+                    this.entities.push({ type: 'flyratter', col: c, row: groundR - 3, x: c * TILE_SIZE, y: (groundR - 3) * TILE_SIZE });
+                } else if (randE < 0.8) {
+                    this.entities.push({ type: 'archer', col: c, row: groundR - 1, x: c * TILE_SIZE, y: (groundR - 1) * TILE_SIZE });
+                } else if (randE < 0.9) {
+                    this.entities.push({ type: Math.random() < 0.5 ? 'fireflower' : 'oneup', col: c, row: groundR - 1, x: c * TILE_SIZE + 4, y: (groundR - 1) * TILE_SIZE + 2 });
+                }
+            }
+        }
+
+        // Mid-checkpoint
+        const midC = Math.floor(width / 2);
+        for (let r = 4; r < height; r++) {
+            if (this.grid[r][midC] !== 0) {
+                this.entities.push({ type: 'checkpoint', col: midC, row: r - 1, x: midC * TILE_SIZE, y: (r - 1) * TILE_SIZE });
+                break;
+            }
+        }
+
+        // Goal at the end
+        const goalC = width - 4;
+        for (let r = height - 5; r < height; r++) {
+            if (this.grid[r][goalC] !== 0) {
+                this.grid[r - 1][goalC] = 10;
+                this.entities.push({ type: 'goal', col: goalC, row: r - 1, x: goalC * TILE_SIZE, y: (r - 1) * TILE_SIZE });
+                break;
+            }
+        }
+
+        this.camX = 0;
+        this.camY = 0;
+        this.zoom = 1;
+        this.selection = null;
+        this.history = [];
+        this.historyIndex = -1;
+        this.modified = true;
+    }
+
     // ─── Tile Operations ──────────────────────────────────────────────
 
     /**

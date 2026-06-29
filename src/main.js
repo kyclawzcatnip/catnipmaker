@@ -540,6 +540,12 @@ document.getElementById('theme-select').addEventListener('change', (e) => {
 
 // File operations
 document.getElementById('btn-new').addEventListener('click', showNewLevelModal);
+document.getElementById('btn-random').addEventListener('click', () => {
+    editor.generateRandomLevel();
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) themeSelect.value = editor.theme;
+    showToast('🎲 Random level generated!');
+});
 document.getElementById('btn-clear').addEventListener('click', () => {
     editor.newLevel();
     showToast('Canvas reset to default!');
