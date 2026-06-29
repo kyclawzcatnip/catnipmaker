@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Anticatite Maker</title>
+    <meta name="description" content="Create, play, save, and share your own platformer levels in the Anticatite universe!">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="src/index.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Top Toolbar -->
+        <header id="toolbar">
+            <div id="toolbar-left">
+                <span id="app-title">ANTICATITE MAKER</span>
+                <div id="toolbar-divider"></div>
+                <button id="btn-new" class="tool-btn" title="New Level (Ctrl+N)">📄 NEW</button>
+                <button id="btn-save" class="tool-btn" title="Save Level (Ctrl+S)">💾 SAVE</button>
+                <button id="btn-load" class="tool-btn" title="Load Level (Ctrl+O)">📂 LOAD</button>
+                <button id="btn-export" class="tool-btn" title="Export as File">📤 EXPORT</button>
+                <button id="btn-import" class="tool-btn" title="Import from File">📥 IMPORT</button>
+            </div>
+            <div id="toolbar-center">
+                <button id="btn-select" class="edit-btn active" title="Select Tool (S)" data-tool="select">🔲</button>
+                <button id="btn-draw" class="edit-btn" title="Draw Tool (D)" data-tool="draw">✏️</button>
+                <button id="btn-erase" class="edit-btn" title="Erase Tool (E)" data-tool="erase">🧹</button>
+                <button id="btn-entity" class="edit-btn" title="Entity Tool (N)" data-tool="entity">👾</button>
+                <button id="btn-fill" class="edit-btn" title="Fill Tool (F)" data-tool="fill">🪣</button>
+                <div id="toolbar-divider"></div>
+                <button id="btn-undo" class="edit-btn" title="Undo (Ctrl+Z)">↩️</button>
+                <button id="btn-redo" class="edit-btn" title="Redo (Ctrl+Shift+Z)">↪️</button>
+                <div id="toolbar-divider"></div>
+                <button id="btn-grid" class="edit-btn active" title="Toggle Grid (G)">🔲</button>
+                <div id="zoom-controls">
+                    <button id="btn-zoom-out" class="edit-btn" title="Zoom Out (-)">➖</button>
+                    <span id="zoom-label">100%</span>
+                    <button id="btn-zoom-in" class="edit-btn" title="Zoom In (+)">➕</button>
+                </div>
+            </div>
+            <div id="toolbar-right">
+                <select id="theme-select" title="Level Theme">
+                    <option value="overworld">🌿 Overworld</option>
+                    <option value="castle">🏰 Castle</option>
+                </select>
+                <button id="btn-play" class="play-btn" title="Play Level (Ctrl+Enter)">▶ PLAY</button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div id="main-content">
+            <!-- Left Palette -->
+            <aside id="palette">
+                <div id="palette-header">
+                    <span id="palette-title">BLOCKS</span>
+                </div>
+                <div id="palette-tabs">
+                    <button class="palette-tab active" data-tab="terrain">🏔️</button>
+                    <button class="palette-tab" data-tab="blocks">🧱</button>
+                    <button class="palette-tab" data-tab="pipes">🟢</button>
+                    <button class="palette-tab" data-tab="special">⭐</button>
+                    <button class="palette-tab" data-tab="entities">👾</button>
+                </div>
+                <div id="palette-items">
+                    <!-- Populated by JS -->
+                </div>
+                <div id="palette-info">
+                    <span id="palette-item-name">Ground</span>
+                </div>
+            </aside>
+
+            <!-- Canvas Area -->
+            <div id="canvas-wrapper">
+                <canvas id="editorCanvas"></canvas>
+                <canvas id="playCanvas" class="hidden"></canvas>
+
+                <!-- Play Mode HUD -->
+                <div id="play-hud" class="hidden">
+                    <span id="hud-coins">🪙 × 0</span>
+                    <span id="hud-timer">⏱ 0:00</span>
+                    <button id="btn-stop" class="stop-btn" title="Back to Editor (Escape)">⬅ EDITOR</button>
+                </div>
+
+                <!-- Play Mode Overlays -->
+                <div id="play-overlay" class="hidden">
+                    <div id="overlay-content">
+                        <div id="overlay-title"></div>
+                        <div id="overlay-sub"></div>
+                        <button id="overlay-btn" class="play-btn"></button>
+                    </div>
+                </div>
+
+                <!-- Mobile Play Controls -->
+                <div id="mobile-play-controls" class="hidden">
+                    <div id="mobile-dpad">
+                        <button id="btn-left" aria-label="Move Left">◀</button>
+                        <button id="btn-right" aria-label="Move Right">▶</button>
+                    </div>
+                    <div id="mobile-actions">
+                        <button id="btn-jump" aria-label="Jump">▲</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Level Properties Modal -->
+        <div id="modal-backdrop" class="hidden">
+            <div id="modal">
+                <div id="modal-title">NEW LEVEL</div>
+                <div id="modal-body">
+                    <label>Level Name
+                        <input id="input-name" type="text" value="Untitled Level" maxlength="40">
+                    </label>
+                    <label>Author
+                        <input id="input-author" type="text" value="Anonymous" maxlength="20">
+                    </label>
+                    <label>Width (tiles)
+                        <input id="input-width" type="number" value="100" min="20" max="500">
+                    </label>
+                    <label>Theme
+                        <select id="input-theme">
+                            <option value="overworld">🌿 Overworld</option>
+                            <option value="castle">🏰 Castle</option>
+                        </select>
+                    </label>
+                </div>
+                <div id="modal-footer">
+                    <button id="modal-cancel" class="tool-btn">CANCEL</button>
+                    <button id="modal-confirm" class="play-btn">CREATE</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Help Modal -->
+        <div id="help-backdrop" class="hidden">
+            <div id="help-modal">
+                <div id="help-title">⌨️ KEYBOARD SHORTCUTS</div>
+                <div id="help-body">
+                    <div class="help-row"><kbd>D</kbd> Draw Tool</div>
+                    <div class="help-row"><kbd>E</kbd> Erase Tool</div>
+                    <div class="help-row"><kbd>S</kbd> Select Tool</div>
+                    <div class="help-row"><kbd>N</kbd> Entity Tool</div>
+                    <div class="help-row"><kbd>F</kbd> Fill Tool</div>
+                    <div class="help-row"><kbd>G</kbd> Toggle Grid</div>
+                    <div class="help-row"><kbd>Space+Drag</kbd> Pan View</div>
+                    <div class="help-row"><kbd>Scroll</kbd> Zoom</div>
+                    <div class="help-row"><kbd>Ctrl+Z</kbd> Undo</div>
+                    <div class="help-row"><kbd>Ctrl+Shift+Z</kbd> Redo</div>
+                    <div class="help-row"><kbd>Ctrl+C</kbd> Copy</div>
+                    <div class="help-row"><kbd>Ctrl+V</kbd> Paste</div>
+                    <div class="help-row"><kbd>Ctrl+X</kbd> Cut</div>
+                    <div class="help-row"><kbd>Del</kbd> Delete Selection</div>
+                    <div class="help-row"><kbd>Ctrl+Enter</kbd> Play Level</div>
+                    <div class="help-row"><kbd>Esc</kbd> Back to Editor</div>
+                    <div class="help-row"><kbd>1-9</kbd> Quick Select Tile</div>
+                    <div class="help-row"><kbd>?</kbd> Show Help</div>
+                </div>
+                <button id="help-close" class="tool-btn">CLOSE</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
